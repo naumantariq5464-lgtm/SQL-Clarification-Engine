@@ -1,0 +1,889 @@
+Text-to-SQL with Clarification Engine — Complete Project Plan
+1. Project Objective
+
+Build an AI-powered system that allows users to query a PostgreSQL database using natural language instead of writing SQL manually.
+
+The system will:
+
+Understand the user's question.
+Detect ambiguity.
+Ask for clarification when necessary.
+Generate the correct SQL query.
+Validate the SQL query.
+Execute it on Neon PostgreSQL.
+Convert the database result into a clear natural-language answer.
+2. Tech Stack
+Backend
+Python
+FastAPI
+SQLAlchemy
+Pydantic
+Database
+PostgreSQL
+Neon Cloud PostgreSQL
+AI
+Groq API
+LLM
+Structured Output
+Frontend
+Next.js
+Tailwind CSS
+Later / Advanced
+LangChain
+LangGraph
+Redis
+Docker
+3. Database Design
+
+We will use a realistic e-commerce/business database.
+
+Initial tables:
+
+customers
+orders
+order_items
+products
+categories
+payments
+Relationships
+categories
+    ↓
+products
+    ↓
+order_items
+    ↓
+orders
+    ↓
+customers
+
+orders
+    ↓
+payments
+
+This will give us enough complexity to test:
+
+JOINs
+Aggregations
+Filtering
+Sorting
+Date queries
+Customer analysis
+Product analysis
+Sales analysis
+Payment analysis
+4. Large Dataset for Proper Testing
+
+We will not use only 10–20 records.
+
+We will create a relatively large and realistic dataset so the system can be properly tested.
+
+Target dataset
+Table	Approx. Records
+Customers	10,000
+Categories	50
+Products	2,000
+Orders	50,000
+Order Items	150,000–200,000
+Payments	50,000
+
+So we will have hundreds of thousands of records overall.
+
+We can generate the data using Python + Faker and insert it into Neon PostgreSQL.
+
+Python
+   ↓
+Faker
+   ↓
+Generate realistic data
+   ↓
+SQLAlchemy / Bulk Insert
+   ↓
+Neon PostgreSQL
+
+This will make testing much more realistic.
+
+5. Database Schema
+
+Example:
+
+Customers
+id
+name
+email
+city
+country
+created_at
+Products
+id
+name
+category_id
+price
+stock
+created_at
+Orders
+id
+customer_id
+total_amount
+status
+created_at
+Order Items
+id
+order_id
+product_id
+quantity
+unit_price
+Payments
+id
+order_id
+amount
+payment_method
+status
+paid_at
+6. Database Relationships
+
+The LLM must understand the schema and relationships.
+
+Example:
+
+customers.id
+      ↓
+orders.customer_id
+
+orders.id
+      ↓
+order_items.order_id
+
+products.id
+      ↓
+order_items.product_id
+
+orders.id
+      ↓
+payments.order_id
+
+This allows the LLM to generate complex SQL queries.
+
+7. Natural Language Query
+
+The user will ask questions like:
+
+"How many customers do we have?"
+
+"What were our total sales last month?"
+
+"Which product sold the most?"
+
+"Who is our best customer?"
+
+"Which city has the highest number of customers?"
+
+"Show me customers who spent more than $5,000."
+
+"Which products generated the most revenue?"
+
+"What was our average order value last month?"
+
+8. Clarification Engine
+
+This is the core feature of the project.
+
+The system should not blindly guess when the user's question is ambiguous.
+
+Example
+
+User:
+
+"Who is the best customer?"
+
+The system detects ambiguity.
+
+It could mean:
+
+Highest total spending
+Most orders
+Highest average order value
+
+So the AI asks:
+
+"What do you mean by best customer: highest total spending, most orders, or highest average order value?"
+
+User:
+
+"Highest total spending."
+
+Now the system generates the SQL.
+
+9. LLM Structured Output
+
+The LLM should return a structured response.
+
+Example:
+
+{
+  "needs_clarification": true,
+  "clarification_question": "Do you mean highest spending or most orders?",
+  "sql": null
+}
+
+For a clear question:
+
+{
+  "needs_clarification": false,
+  "clarification_question": null,
+  "sql": "SELECT ..."
+}
+
+Pydantic will validate this output.
+
+10. SQL Generation
+
+After the user's intent is clear:
+
+User Question
+      ↓
+LLM
+      ↓
+SQL Generation
+
+Example:
+
+User:
+
+"Which customer spent the most money?"
+
+Generated SQL:
+
+SELECT
+    c.id,
+    c.name,
+    SUM(o.total_amount) AS total_spent
+FROM customers c
+JOIN orders o
+    ON c.id = o.customer_id
+WHERE o.status = 'completed'
+GROUP BY c.id, c.name
+ORDER BY total_spent DESC
+LIMIT 1;
+11. SQL Validation & Safety
+
+We should never blindly execute LLM-generated SQL.
+
+The backend will validate the query first.
+
+Initially, we will allow only:
+
+SELECT
+
+and reject dangerous operations such as:
+
+INSERT
+UPDATE
+DELETE
+DROP
+ALTER
+TRUNCATE
+
+The system should also check:
+
+Valid tables
+Valid columns
+SQL syntax
+Query complexity
+Unauthorized data access
+12. Execute Query on Neon
+
+After validation:
+
+Generated SQL
+      ↓
+FastAPI
+      ↓
+SQLAlchemy
+      ↓
+Neon PostgreSQL
+      ↓
+Query Result
+
+Example result:
+
+Ali
+Total Spending: $18,450
+13. Generate Final Answer
+
+The raw database result will be converted into a human-readable response.
+
+Instead of:
+
+{
+  "name": "Ali",
+  "total_spent": 18450
+}
+
+The user receives:
+
+Ali is the highest-spending customer with total purchases of $18,450.
+
+14. Conversation / Clarification Flow
+
+The system must maintain context during clarification.
+
+Example:
+
+User:
+Who is the best customer?
+
+AI:
+Do you mean highest spending or most orders?
+
+User:
+Highest spending.
+
+AI:
+[Generates SQL based on the original question
+ + user's clarification]
+
+The clarification should not be treated as a completely new query.
+
+15. FastAPI Backend
+
+Main API:
+
+POST /query
+
+Request:
+
+{
+  "question": "Who is the best customer?"
+}
+
+Response:
+
+{
+  "needs_clarification": true,
+  "clarification_question": "Do you mean highest spending or most orders?"
+}
+
+After clarification:
+
+{
+  "question": "Highest spending"
+}
+
+Final response:
+
+{
+  "answer": "Ali is the highest-spending customer with $18,450."
+}
+16. Frontend
+
+Build a simple chat interface with Next.js.
+
+-------------------------------------
+        AI Database Assistant
+-------------------------------------
+
+User:
+Who is the best customer?
+
+AI:
+Do you mean highest spending,
+most orders, or highest average
+order value?
+
+User:
+Highest spending.
+
+AI:
+Ali is the highest-spending
+customer with $18,450.
+
+-------------------------------------
+ Type your question...
+-------------------------------------
+17. Testing Strategy
+
+Because we are using a large dataset, we can properly test the system.
+
+Basic Queries
+How many customers do we have?
+How many products are available?
+Filtering
+Show customers from Lahore.
+Show products above $500.
+Aggregation
+What are our total sales?
+What is the average order value?
+Ranking
+Which product sold the most?
+Who spent the most?
+Date Queries
+What were our sales last month?
+How many orders did we receive this week?
+Complex Queries
+Which city generated the highest revenue?
+Which customer purchased the most products?
+Which category generated the most revenue last quarter?
+Ambiguous Queries
+Who is the best customer?
+Show me the top products.
+Give me the recent orders.
+Show me high-value customers.
+
+The Clarification Engine should identify these appropriately.
+
+18. Error Handling
+
+We will intentionally break the system and fix the problems.
+
+Examples:
+
+Invalid question
+
+"Show me employee salaries."
+
+System:
+
+"I don't have employee salary data in the available database."
+
+Invalid SQL
+
+LLM generates incorrect SQL.
+
+System:
+
+SQL Error
+   ↓
+Detect Error
+   ↓
+Send error/context back to LLM
+   ↓
+Regenerate SQL
+   ↓
+Validate
+   ↓
+Execute
+19. Performance Testing
+
+Because the database contains a large amount of data, we can test:
+
+Query execution time
+Complex JOIN performance
+Aggregation performance
+Database indexes
+Pagination
+API response time
+Concurrent requests
+
+This makes the project much closer to a real production AI system.
+
+20. Development Phases
+Phase 1 — SQL & Database
+Learn required SQL
+Design schema
+Create Neon database
+Create tables
+Add relationships
+Phase 2 — Data Generation
+Create Faker scripts
+Generate large realistic dataset
+Bulk insert data
+Verify database
+Phase 3 — Python Database Layer
+SQLAlchemy
+PostgreSQL connection
+Models
+Query execution
+Phase 4 — LLM Integration
+Groq
+Prompt engineering
+Database schema injection
+SQL generation
+Phase 5 — Clarification Engine
+Ambiguity detection
+Clarification questions
+Conversation context
+Intent resolution
+Phase 6 — SQL Safety
+SQL validation
+Read-only queries
+Error handling
+Query restrictions
+Phase 7 — FastAPI
+API endpoints
+Request/response models
+Database integration
+LLM integration
+Phase 8 — Frontend
+Next.js
+Chat interface
+API integration
+Loading/error states
+Phase 9 — Testing
+Simple queries
+Complex queries
+Ambiguous queries
+Invalid queries
+Large-data testing
+Performance testing
+Phase 10 — Deployment
+Next.js → Frontend Hosting
+FastAPI → Backend Hosting
+Neon → PostgreSQL
+Groq → LLM
+21. Final Architecture
+                    USER
+                      ↓
+                Next.js Chat UI
+                      ↓
+                 FastAPI API
+                      ↓
+              Clarification Engine
+                      ↓
+               ┌──────────────┐
+               │ Is ambiguous?│
+               └──────────────┘
+                 ↓          ↓
+                YES         NO
+                 ↓           ↓
+          Ask clarification  ↓
+                 ↓           ↓
+              User Answer    ↓
+                 └─────┬─────┘
+                       ↓
+                  LLM / Groq
+                       ↓
+                 Generate SQL
+                       ↓
+                 SQL Validator
+                       ↓
+                  SQLAlchemy
+                       ↓
+                Neon PostgreSQL
+                       ↓
+                 Query Result
+                       ↓
+                  LLM Formatter
+                       ↓
+                  Final Answer
+                       ↓
+                     USER
+Final Goal
+
+By the end, we should have a real AI Database Assistant where a user can ask questions in natural language, the system can handle ambiguity, generate safe SQL, query a large PostgreSQL dataset, and return an understandable answer.
+
+And because we're intentionally keeping a large dataset, the project will also demonstrate real SQL, database performance, joins, aggregation, indexing, and AI reliability—not just a basic demo.
+Project Structure
+text-to-sql-clarification-engine/
+│
+├── backend/
+│   │
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   │
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   └── routes/
+│   │   │       ├── __init__.py
+│   │   │       ├── query.py
+│   │   │       └── health.py
+│   │   │
+│   │   ├── core/
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   └── security.py
+│   │   │
+│   │   ├── db/
+│   │   │   ├── __init__.py
+│   │   │   ├── database.py
+│   │   │   ├── models.py
+│   │   │   └── schema_loader.py
+│   │   │
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   ├── query.py
+│   │   │   └── response.py
+│   │   │
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── llm_service.py
+│   │   │   ├── clarification_service.py
+│   │   │   ├── sql_generation_service.py
+│   │   │   ├── sql_validation_service.py
+│   │   │   ├── query_execution_service.py
+│   │   │   └── answer_service.py
+│   │   │
+│   │   ├── prompts/
+│   │   │   ├── clarification_prompt.txt
+│   │   │   ├── sql_generation_prompt.txt
+│   │   │   └── answer_prompt.txt
+│   │   │
+│   │   └── utils/
+│   │       ├── __init__.py
+│   │       ├── sql_utils.py
+│   │       └── logger.py
+│   │
+│   ├── tests/
+│   │   ├── test_clarification.py
+│   │   ├── test_sql_generation.py
+│   │   ├── test_sql_validation.py
+│   │   └── test_query_api.py
+│   │
+│   ├── scripts/
+│   │   ├── seed_database.py
+│   │   └── generate_data.py
+│   │
+│   ├── requirements.txt
+│   ├── .env
+│   └── .env.example
+│
+├── frontend/
+│   │
+│   ├── app/
+│   │   ├── page.tsx
+│   │   ├── layout.tsx
+│   │   └── chat/
+│   │       └── page.tsx
+│   │
+│   ├── components/
+│   │   ├── ChatBox.tsx
+│   │   ├── Message.tsx
+│   │   ├── InputBox.tsx
+│   │   └── Loading.tsx
+│   │
+│   ├── lib/
+│   │   └── api.ts
+│   │
+│   ├── package.json
+│   └── .env.local
+│
+├── database/
+│   ├── migrations/
+│   ├── schema.sql
+│   └── README.md
+│
+├── docs/
+│   ├── architecture.md
+│   ├── database-schema.md
+│   └── api.md
+│
+├── .gitignore
+├── README.md
+└── docker-compose.yml
+What Each Folder Does
+api/
+
+Contains your FastAPI endpoints.
+
+POST /query
+GET /health
+core/
+
+Application configuration.
+
+For example:
+
+DATABASE_URL=
+GROQ_API_KEY=
+
+config.py will load these environment variables.
+
+db/
+
+Everything related to PostgreSQL/Neon.
+
+database.py       → Database connection
+models.py         → SQLAlchemy models
+schema_loader.py  → Database schema information for LLM
+schemas/
+
+Pydantic models.
+
+Example:
+
+class QueryRequest(BaseModel):
+    question: str
+
+And:
+
+class QueryResponse(BaseModel):
+    answer: str
+    sql: str | None = None
+    needs_clarification: bool
+Most Important Folder: services/
+
+This is where the actual AI logic lives.
+
+llm_service.py
+
+Handles Groq/LLM communication.
+
+Python → Groq → LLM → Response
+clarification_service.py
+
+Determines whether the user's question is ambiguous.
+
+Question
+   ↓
+Clear?
+   ↓
+YES / NO
+sql_generation_service.py
+
+Converts clear user intent into SQL.
+
+Natural Language
+       ↓
+      LLM
+       ↓
+      SQL
+sql_validation_service.py
+
+Checks whether generated SQL is safe.
+
+Generated SQL
+     ↓
+Validation
+     ↓
+Safe?
+query_execution_service.py
+
+Executes the validated SQL against Neon.
+
+SQL
+ ↓
+SQLAlchemy
+ ↓
+Neon PostgreSQL
+ ↓
+Result
+answer_service.py
+
+Converts database results into a user-friendly answer.
+
+Database Result
+      ↓
+     LLM
+      ↓
+Human-readable Answer
+prompts/
+
+Keep prompts separate from Python code.
+
+For example:
+
+clarification_prompt.txt
+
+will contain instructions like:
+
+You are a database clarification assistant.
+
+Analyze the user's question.
+
+If the question is ambiguous,
+ask a concise clarification question.
+
+Do not make assumptions.
+
+This makes prompts easier to maintain and improve.
+
+scripts/
+
+This is particularly important because we want a large dataset.
+
+generate_data.py
+
+Generates:
+
+10,000 customers
+2,000 products
+50,000 orders
+150,000+ order items
+50,000 payments
+
+using Faker.
+
+seed_database.py
+
+Pushes that generated data into Neon.
+
+So:
+
+Faker
+ ↓
+Generate large dataset
+ ↓
+seed_database.py
+ ↓
+Neon PostgreSQL
+Database Structure
+
+Keep database-related files separate:
+
+database/
+│
+├── schema.sql
+├── migrations/
+└── README.md
+
+schema.sql defines the tables and relationships.
+
+Complete Backend Flow
+
+Your actual code flow will eventually look like:
+
+POST /query
+     ↓
+query.py
+     ↓
+clarification_service
+     ↓
+Is question ambiguous?
+     ↓
+ ┌────────────┐
+ │            │
+ YES          NO
+ │             │
+ ↓             ↓
+Ask user    SQL Generation
+              ↓
+         SQL Validation
+              ↓
+        Query Execution
+              ↓
+       Neon PostgreSQL
+              ↓
+         Answer Service
+              ↓
+            Response
+One Important Recommendation
+
+Don't build everything at once.
+
+Build it in this order:
+
+1. PostgreSQL + Schema
+        ↓
+2. Large Dataset
+        ↓
+3. SQLAlchemy
+        ↓
+4. Basic FastAPI
+        ↓
+5. Groq/LLM
+        ↓
+6. Text → SQL
+        ↓
+7. Clarification Engine
+        ↓
+8. SQL Validation
+        ↓
+9. Result → Natural Language
+        ↓
+10. Frontend
+        ↓
+11. Testing + Optimization
+        ↓
+12. Deployment
+
+This way, jab koi issue aaye to tumhein pata hoga exactly kis layer mein problem hai.
