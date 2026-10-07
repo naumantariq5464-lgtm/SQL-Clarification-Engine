@@ -10,7 +10,7 @@ if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY is not set in the .env file.")
 
 client = Groq(api_key=GROQ_API_KEY)
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 def get_llm_json_response(system_prompt: str, user_prompt: str, model: str = DEFAULT_MODEL) -> str:
     """
